@@ -12,17 +12,24 @@ class AuthLogo extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 40, height: 40,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [AppTheme.primary, AppTheme.accent]),
+            gradient: const LinearGradient(
+              colors: [AppTheme.primary, AppTheme.accent],
+            ),
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Icon(Icons.how_to_vote, color: Colors.white, size: 22),
         ),
         const SizedBox(width: 12),
         const Text(
-          'EVoteHub',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+          'Ballotly',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.textPrimary,
+          ),
         ),
       ],
     );
@@ -44,7 +51,10 @@ class AuthErrorBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppTheme.danger.withOpacity(0.3)),
       ),
-      child: Text(message, style: const TextStyle(color: AppTheme.danger, fontSize: 14)),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppTheme.danger, fontSize: 14),
+      ),
     );
   }
 }

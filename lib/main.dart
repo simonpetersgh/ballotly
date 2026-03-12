@@ -14,17 +14,17 @@ void main() async {
     anonKey: SupabaseConstants.supabaseAnonKey,
   );
 
-  runApp(const ProviderScope(child: EVoteHubApp()));
+  runApp(const ProviderScope(child: BallotlyApp()));
 }
 
-class EVoteHubApp extends ConsumerWidget {
-  const EVoteHubApp({super.key});
+class BallotlyApp extends ConsumerWidget {
+  const BallotlyApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
-      title: 'EVoteHub',
+      title: 'Ballotly',
       theme: AppTheme.theme,
       routerConfig: router,
       debugShowCheckedModeBanner: false,

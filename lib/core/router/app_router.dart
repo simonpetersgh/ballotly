@@ -1,7 +1,9 @@
 // lib/core/router/app_router.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:myapp/core/constants/app_constants.dart';
 import 'package:myapp/features/admin/admin_dashboard_screen.dart';
 import 'package:myapp/features/admin/admin_election_voters_screen.dart';
 import 'package:myapp/features/admin/election_setup_shell.dart';
@@ -30,7 +32,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       final publicRoutes = [
         '/',
-        '/voter/login',
+        '/voter/',
         '/voter/register',
         '/organiser/login',
         '/organiser/register',
@@ -40,13 +42,33 @@ final routerProvider = Provider<GoRouter>((ref) {
         (r) => state.matchedLocation.startsWith(r),
       );
 
+      // Not logged in and trying to access a protected route
       if (!isLoggedIn && !isPublic) return '/';
-      if (isLoggedIn && state.matchedLocation == '/') {
-        // Route based on account type
+
+      // if (isLoggedIn && state.matchedLocation == '/') {
+      //   // Route based on account type
+      //   final profile = await ref.read(currentUserProfileProvider.future);
+      //   if (profile?.isOrganiser == true) return '/admin';
+      //   return '/elections';
+      // }
+      // Role guards
+      if (isLoggedIn) {
+        final profile = await ref.read(currentUserProfileProvider.future);
+        if (state.matchedLocation.startsWith('/admin') &&
+            profile?.isOrganiser != true)
+          return '/elections';
+        if (state.matchedLocation.startsWith('/elections') &&
+            profile?.isOrganiser == true)
+          return '/admin';
+      }
+
+      // Logged in and hitting a public/landing route — route by role
+      if (isLoggedIn && isPublic) {
         final profile = await ref.read(currentUserProfileProvider.future);
         if (profile?.isOrganiser == true) return '/admin';
         return '/elections';
       }
+
       return null;
     },
     routes: [
@@ -151,100 +173,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 // ─── VOTER SHELL ──────────────────────────────────────────────────────────────
-
-// class VoterShell extends ConsumerWidget {
-//   final Widget child;
-//   const VoterShell({super.key, required this.child});
-
-//   @override
-//   Widget build(BuildContext context, WidgetRef ref) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Row(
-//           children: [
-//             Container(
-//               width: 28,
-//               height: 28,
-//               decoration: BoxDecoration(
-//                 gradient: const LinearGradient(
-//                   colors: [AppTheme.primary, AppTheme.accent],
-//                 ),
-//                 borderRadius: BorderRadius.circular(7),
-//               ),
-//               child: const Icon(
-//                 Icons.how_to_vote,
-//                 color: Colors.white,
-//                 size: 16,
-//               ),
-//             ),
-//             const SizedBox(width: 10),
-//             Flexible(child: const Text(overflow: TextOverflow.ellipsis, 'EVoteHub')),
-//           ],
-//         ),
-//         actions: [
-//           IconButton(
-//             icon: const Icon(Icons.logout),
-//             tooltip: 'Sign out',
-//             onPressed: () async {
-//               await ref.read(supabaseServiceProvider).signOut();
-//               if (context.mounted) context.go('/');
-//             },
-//           ),
-//         ],
-//       ),
-//       body: child,
-//     );
-//   }
-// }
-
-// // ─── ADMIN SHELL ──────────────────────────────────────────────────────────────
-
-// class AdminShell extends ConsumerWidget {
-//   final Widget child;
-//   const AdminShell({super.key, required this.child});
-
-//   @override
-//   Widget build(BuildContext context, WidgetRef ref) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Row(
-//           mainAxisSize: MainAxisSize.min,
-//           children: [
-//             Container(
-//               width: 28,
-//               height: 28,
-//               decoration: BoxDecoration(
-//                 gradient: const LinearGradient(
-//                   colors: [AppTheme.accent, AppTheme.primary],
-//                 ),
-//                 borderRadius: BorderRadius.circular(7),
-//               ),
-//               child: const Icon(
-//                 Icons.admin_panel_settings,
-//                 color: Colors.white,
-//                 size: 16,
-//               ),
-//             ),
-//             const SizedBox(width: 10),
-//             Flexible(child: const Text(overflow: TextOverflow.ellipsis, 'EVoteHub Admin')),
-//           ],
-//         ),
-//         actions: [
-//           IconButton(
-//             icon: const Icon(Icons.logout),
-//             tooltip: 'Sign out',
-//             onPressed: () async {
-//               await ref.read(supabaseServiceProvider).signOut();
-//               if (context.mounted) context.go('/');
-//             },
-//           ),
-//         ],
-//       ),
-//       body: child,
-//     );
-//   }
-// }
-
+// ─── VOTER SHELL ──────────────────────────────────────────────────────────────
+// ─── VOTER SHELL ──────────────────────────────────────────────────────────────
 // ─── VOTER SHELL ──────────────────────────────────────────────────────────────
 
 class VoterShell extends ConsumerWidget {
@@ -262,15 +192,17 @@ class VoterShell extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: _shellAppBar(
-        isAdmin: false,
-        isMobile: isMobile,
-        signOut: signOut,
-      ),
-      drawer: isMobile
+      endDrawer: isMobile
           ? _AppDrawer(name: name, isAdmin: false, onSignOut: signOut)
           : null,
-      body: child,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _ShellNav(isAdmin: false, isMobile: isMobile, signOut: signOut),
+            Expanded(child: child),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -292,65 +224,111 @@ class AdminShell extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: _shellAppBar(isAdmin: true, isMobile: isMobile, signOut: signOut),
-      drawer: isMobile
+      endDrawer: isMobile
           ? _AppDrawer(name: name, isAdmin: true, onSignOut: signOut)
           : null,
-      body: child,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _ShellNav(isAdmin: true, isMobile: isMobile, signOut: signOut),
+            Expanded(child: child),
+          ],
+        ),
+      ),
     );
   }
 }
 
-// ─── SHARED APP BAR ───────────────────────────────────────────────────────────
+// ─── CUSTOM SHELL NAV ─────────────────────────────────────────────────────────
 
-AppBar _shellAppBar({
-  required bool isAdmin,
-  required bool isMobile,
-  required Future<void> Function() signOut,
-}) {
-  return AppBar(
-    automaticallyImplyLeading: isMobile,
-    title: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: isAdmin
-                  ? [AppTheme.accent, AppTheme.primary]
-                  : [AppTheme.primary, AppTheme.accent],
+class _ShellNav extends StatelessWidget {
+  final bool isAdmin;
+  final bool isMobile;
+  final Future<void> Function() signOut;
+
+  const _ShellNav({
+    required this.isAdmin,
+    required this.isMobile,
+    required this.signOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        border: Border(bottom: BorderSide(color: AppTheme.border)),
+      ),
+      child: Row(
+        children: [
+          // Logo icon
+          AppLogo(),
+          // Container(
+          //   width: 32,
+          //   height: 32,
+          //   decoration: BoxDecoration(
+          //     gradient: LinearGradient(
+          //       colors: isAdmin
+          //           ? [AppTheme.accent, AppTheme.primary]
+          //           : [AppTheme.primary, AppTheme.accent],
+          //     ),
+          //     borderRadius: BorderRadius.circular(8),
+          //   ),
+          //   child: Icon(
+          //     isAdmin ? Icons.admin_panel_settings : Icons.how_to_vote,
+          //     color: Colors.white,
+          //     size: 17,
+          //   ),
+          // ),
+          const SizedBox(width: 10),
+          Text(
+            isAdmin ? 'Ballotly Orgainiser' : 'Ballotly',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: AppTheme.textPrimary,
+              letterSpacing: -0.3,
             ),
-            borderRadius: BorderRadius.circular(7),
           ),
-          child: Icon(
-            isAdmin ? Icons.admin_panel_settings : Icons.how_to_vote,
-            color: Colors.white,
-            size: 16,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(
-            isAdmin ? 'EVoteHub Admin' : 'EVoteHub',
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-        ),
-      ],
-    ),
-    // On mobile sign out is in the drawer — keep appbar clean
-    actions: isMobile
-        ? null
-        : [
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Sign out',
+
+          const Spacer(),
+
+          // Desktop — sign out inline
+          if (!isMobile)
+            TextButton.icon(
               onPressed: signOut,
+              icon: const Icon(Icons.logout_rounded, size: 16),
+              label: const Text('Sign out'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+              ),
             ),
-          ],
-  );
+
+          // Mobile — menu icon opens right drawer
+          if (isMobile)
+            Builder(
+              builder: (ctx) => IconButton(
+                // icon: const Icon(Icons.menu_rounded),
+                icon: SvgPicture.asset(
+                  'assets/icons/menu.svg',
+                  width: 24,
+                  height: 24,
+                  colorFilter: const ColorFilter.mode(
+                    AppTheme.textPrimary,
+                    BlendMode.srcIn,
+                  ),
+                ),
+
+                color: AppTheme.textPrimary,
+                onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── APP DRAWER (mobile only) ─────────────────────────────────────────────────
@@ -402,7 +380,7 @@ class _AppDrawer extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    'EVoteHub',
+                    'Ballotly',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -432,7 +410,7 @@ class _AppDrawer extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
-                        'Admin',
+                        'Organiser',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 11,
