@@ -1,7 +1,6 @@
 // lib/core/services/supabase_service.dart
 import 'package:myapp/core/models/models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-// import '../../shared/models/models.dart';
 import '../constants/supabase_constants.dart';
 
 class SupabaseService {
@@ -45,7 +44,7 @@ class SupabaseService {
       shouldCreateUser: true,
       data: {
         'full_name': fullName,
-        'account_type': SupabaseConstants.accountTypeVoter,
+        // 'account_type': SupabaseConstants.accountTypeVoter,
       },
     );
   }
@@ -104,7 +103,7 @@ class SupabaseService {
       password: password,
       data: {
         'full_name': fullName,
-        'account_type': SupabaseConstants.accountTypeOrganiser,
+        // 'account_type': SupabaseConstants.accountTypeOrganiser,
       },
       emailRedirectTo: null, // we handle OTP confirm in-app
     );
@@ -146,8 +145,8 @@ class SupabaseService {
       'id': user.id,
       'email': user.email,
       'full_name': fullName,
-      'account_type': accountType,
-      'is_admin': accountType == SupabaseConstants.accountTypeOrganiser,
+      // date created will be set automatically
+      // 'account_type': accountType,
     });
   }
 
@@ -210,6 +209,17 @@ class SupabaseService {
   }
 
   // ─── ELECTIONS (admin-facing) ──────────────────────────────────────────────
+/// Returns all elections created by the current user (My Elections).
+  Future<List<ElectionModel>> getMyCreatedElections() async {
+    final user = currentUser;
+    if (user == null) return [];
+    final data = await _client
+        .from(SupabaseConstants.electionsTable)
+        .select('*, positions(*, candidates(*))')
+        .eq('created_by', user.id)
+        .order('created_at', ascending: false);
+    return (data as List).map((e) => ElectionModel.fromJson(e)).toList();
+  }
 
   Future<List<ElectionModel>> getAllElections() async {
     final data = await _client
@@ -262,6 +272,31 @@ class SupabaseService {
         })
         .eq('id', electionId)
         .eq('status', SupabaseConstants.statusDraft);
+  }
+
+  /// Update election verification settings.
+  /// verificationMode: 'manual' | 'otp'
+  /// secondaryTokenEnabled: whether voters must supply a secondary token.
+  ///
+  /// PREMIUM GATE (commented out — uncomment when payment is integrated):
+  // Future<void> updateElectionVerification({...}) async {
+  //   if (mode == 'otp') {
+  //     final paid = await _isElectionPaid(electionId);
+  //     if (!paid) throw PremiumRequiredException('OTP verification requires a paid election.');
+  //   }
+  // }
+  Future<void> updateElectionVerification({
+    required String electionId,
+    required String verificationMode,
+    required bool secondaryTokenEnabled,
+  }) async {
+    await _client
+        .from(SupabaseConstants.electionsTable)
+        .update({
+          'verification_mode': verificationMode,
+          'secondary_token_enabled': secondaryTokenEnabled,
+        })
+        .eq('id', electionId);
   }
 
   /// Update election status — handles all manual transitions.
@@ -369,6 +404,33 @@ class SupabaseService {
 
   // ─── VOTERS (election eligibility) ────────────────────────────────────────
 
+  /// Look up a voter by email + primary token (+ optional secondary token).
+  /// Used by guest manual verification and logged-in voter token confirmation.
+  Future<VoterModel?> getVoterByToken({
+    required String electionId,
+    required String email,
+    required String primaryToken,
+    String? secondaryToken,
+  }) async {
+    var query = _client
+        .from(SupabaseConstants.votersTable)
+        .select()
+        .eq('election_id', electionId)
+        .eq('email', email.trim().toLowerCase())
+        .eq('primary_token', primaryToken.trim());
+
+    if (secondaryToken != null && secondaryToken.isNotEmpty) {
+      query = query.eq('secondary_token', secondaryToken.trim());
+    }
+
+    final data = await query.maybeSingle();
+    if (data == null) return null;
+    return VoterModel.fromJson(data);
+  }
+
+  // ─── VOTING ───────────────────────────────────────────────────────────────
+
+
   Future<List<VoterModel>> getElectionVoters(String electionId) async {
     final data = await _client
         .from(SupabaseConstants.votersTable)
@@ -383,6 +445,8 @@ class SupabaseService {
     required String electionId,
     required String email,
     required String fullName,
+    String? primaryToken,
+    String? secondaryToken
   }) async {
     final user = currentUser!;
     final data = await _client
@@ -572,13 +636,63 @@ class SupabaseService {
 
   // ─── ADMIN USERS ──────────────────────────────────────────────────────────
 
-  Future<List<UserProfileModel>> getAllOrganisers() async {
-    final data = await _client
-        .from(SupabaseConstants.userProfilesTable)
-        .select()
-        .eq('account_type', SupabaseConstants.accountTypeOrganiser)
-        .order('created_at', ascending: false);
+  // Future<List<UserProfileModel>> getAllOrganisers() async {
+  //   final data = await _client
+  //       .from(SupabaseConstants.userProfilesTable)
+  //       .select()
+  //       .eq('account_type', SupabaseConstants.accountTypeOrganiser)
+  //       .order('created_at', ascending: false);
 
-    return (data as List).map((v) => UserProfileModel.fromJson(v)).toList();
+  //   return (data as List).map((v) => UserProfileModel.fromJson(v)).toList();
+  // }
+
+  // ─── GUEST / PUBLIC ───────────────────────────────────────────────────────
+
+  /// Look up a published/active/closed election by its short code.
+  /// Returns null if code is not found or election is in draft.
+  Future<ElectionModel?> getElectionByCode(String code) async {
+    final data = await _client
+        .from(SupabaseConstants.electionsTable)
+        .select('*, positions(*, candidates(*))')
+        .eq('code', code.trim().toUpperCase())
+        .inFilter('status', ['published', 'active', 'closed'])
+        .maybeSingle();
+
+    if (data == null) return null;
+    return ElectionModel.fromJson(data);
+  }
+
+  /// Returns the voter record for a given email + electionId.
+  /// Used by guest flow after OTP verification to confirm eligibility.
+  Future<VoterModel?> getVoterByEmail({
+    required String electionId,
+    required String email,
+  }) async {
+    final data = await _client
+        .from(SupabaseConstants.votersTable)
+        .select()
+        .eq('election_id', electionId)
+        .eq('email', email.trim().toLowerCase())
+        .maybeSingle();
+
+    if (data == null) return null;
+    return VoterModel.fromJson(data);
+  }
+
+  /// Returns position IDs already voted for by a voter record ID.
+  /// Used in guest flow (same as getVotedPositions but by voterId directly).
+  Future<List<String>> getVotedPositionsByVoterId(String voterId) async {
+    final data = await _client
+        .from(SupabaseConstants.votesTable)
+        .select('position_id')
+        .eq('voter_id', voterId);
+
+    return (data as List).map((v) => v['position_id'] as String).toList();
+  }
+
+  /// Public results — no auth required. Only works for closed elections.
+  Future<List<TallyResult>> getPublicElectionResults(String electionId) async {
+    // Re-uses the same tally logic; RLS must allow anon reads on closed elections.
+    return getElectionResults(electionId);
   }
 }

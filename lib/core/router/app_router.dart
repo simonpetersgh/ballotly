@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:line_icons/line_icons.dart';
 import 'package:myapp/core/constants/app_constants.dart';
+import 'package:myapp/core/models/models.dart';
+import 'package:myapp/features/about_screen.dart';
 import 'package:myapp/features/admin/admin_dashboard_screen.dart';
 import 'package:myapp/features/admin/admin_election_voters_screen.dart';
 import 'package:myapp/features/admin/election_setup_shell.dart';
@@ -14,9 +17,17 @@ import 'package:myapp/features/auth/voter_auth_screen.dart';
 import 'package:myapp/features/auth/voter_login_screen.dart';
 import 'package:myapp/features/auth/voter_profile_setup.dart';
 import 'package:myapp/features/auth/voter_register_screen.dart';
+import 'package:myapp/features/dashboard.dart';
 import 'package:myapp/features/elections/election_details.dart';
 import 'package:myapp/features/elections/elections_screen.dart';
+import 'package:myapp/features/elections/get_ballot_screen.dart';
+import 'package:myapp/features/elections/public_results_screen.dart';
+import 'package:myapp/features/guest_entry_page.dart';
+import 'package:myapp/features/guest_opt_verification_page.dart';
+import 'package:myapp/features/howto_screen.dart';
+import 'package:myapp/features/privacy_screen.dart';
 import 'package:myapp/features/results/results_screen.dart';
+import 'package:myapp/features/terms_screen.dart';
 import 'package:myapp/features/voting/voting_screen.dart';
 import 'package:myapp/landing_screen.dart';
 import '../providers/providers.dart';
@@ -33,11 +44,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       final publicRoutes = [
         '/',
         '/voter/',
+        '/voter/login',
         '/voter/register',
         '/organiser/login',
         '/organiser/register',
         '/otp',
+        '/privacy',
+        '/terms',
+        '/how-to',
+        '/about',
+        '/guest',
+        '/results',
       ];
+
       final isPublic = publicRoutes.any(
         (r) => state.matchedLocation.startsWith(r),
       );
@@ -51,46 +70,76 @@ final routerProvider = Provider<GoRouter>((ref) {
       //   if (profile?.isOrganiser == true) return '/admin';
       //   return '/elections';
       // }
-      // Role guards
-      if (isLoggedIn) {
-        final profile = await ref.read(currentUserProfileProvider.future);
-        if (state.matchedLocation.startsWith('/admin') &&
-            profile?.isOrganiser != true)
-          return '/elections';
-        if (state.matchedLocation.startsWith('/elections') &&
-            profile?.isOrganiser == true)
-          return '/admin';
-      }
 
-      // Logged in and hitting a public/landing route — route by role
-      if (isLoggedIn && isPublic) {
-        final profile = await ref.read(currentUserProfileProvider.future);
-        if (profile?.isOrganiser == true) return '/admin';
-        return '/elections';
-      }
+      // // Logged in and hitting a public/landing route — route by role
+      // if (isLoggedIn && isPublic) {
+      //   final profile = await ref.read(currentUserProfileProvider.future);
+      //   if (profile?.isOrganiser == true) return '/admin';
+      //   return '/elections';
+      // }
 
+      if (isLoggedIn && state.matchedLocation == '/') {
+        // All logged-in users go to the unified dashboard.
+        return '/dashboard';
+      }
       return null;
     },
+
     routes: [
       // ── Public ────────────────────────────────────────────────────────────
       GoRoute(path: '/', builder: (_, __) => const LandingScreen()),
+      GoRoute(path: '/privacy', builder: (_, __) => const PrivacyScreen()),
+      GoRoute(path: '/terms', builder: (_, __) => const TermsScreen()),
+      GoRoute(path: '/how-to', builder: (_, __) => const HowToScreen()),
+      GoRoute(path: '/about', builder: (_, __) => const AboutScreen()),
+      // ── Guest voting ──────────────────────────────────────────────────────
+      GoRoute(path: '/guest', builder: (_, __) => const GuestEntryScreen()),
+      GoRoute(
+        path: '/guest/:electionId',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, String>? ?? {};
+          return GuestBallotScreen(
+            electionId: state.pathParameters['electionId']!,
+            voterId: extra['voterId'] ?? '',
+            voterEmail: extra['email'] ?? '',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/guest/otp-verify',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return GuestOtpVerifyScreen(
+            election: extra['election'] as ElectionModel,
+            voter: extra['voter'] as VoterModel,
+            email: extra['email'] as String,
+          );
+        },
+      ),
 
+      // ── Public results ────────────────────────────────────────────────────
+      GoRoute(
+        path: '/results/:electionId',
+        builder: (_, state) => PublicResultsScreen(
+          electionId: state.pathParameters['electionId']!,
+        ),
+      ),
+
+      // ------ AUTH ROUTES -------
       // Replace the old separate voter routes with the unified one
       GoRoute(path: '/voter', builder: (_, __) => const VoterAuthScreen()),
       GoRoute(
         path: '/voter/profile',
         builder: (_, __) => const VoterProfileScreen(),
       ),
-
-      // GoRoute(
-      //   path: '/voter/login',
-      //   builder: (_, __) => const VoterLoginScreen(),
-      // ),
-      // GoRoute(
-      //   path: '/voter/register',
-      //   builder: (_, __) => const VoterRegisterScreen(),
-      // ),
-      // Keep organiser routes
+      GoRoute(
+        path: '/voter/login',
+        builder: (_, __) => const VoterLoginScreen(),
+      ),
+      GoRoute(
+        path: '/voter/register',
+        builder: (_, __) => const VoterRegisterScreen(),
+      ),
       GoRoute(
         path: '/organiser/login',
         builder: (_, __) => const OrganiserLoginScreen(),
@@ -107,11 +156,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           mode: state.uri.queryParameters['mode'] ?? 'voter_login',
         ),
       ),
+      // /////////
 
       // ── Voter shell ───────────────────────────────────────────────────────
+      // ── Unified shell (all logged-in users)
       ShellRoute(
         builder: (context, state, child) => VoterShell(child: child),
         routes: [
+          GoRoute(
+            path: '/dashboard',
+            builder: (_, __) => const DashboardScreen(),
+          ),
           GoRoute(
             path: '/elections',
             builder: (_, __) => const ElectionsScreen(),
@@ -120,6 +175,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/elections/:id',
             builder: (_, state) =>
                 ElectionDetailScreen(electionId: state.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: '/elections/:id/confirm',
+            builder: (_, state) {
+              final extra = state.extra as Map<String, dynamic>? ?? {};
+              return VoterTokenConfirmScreen(
+                electionId: state.pathParameters['id']!,
+                voter: extra['voter'] as VoterModel,
+              );
+            },
           ),
           GoRoute(
             path: '/elections/:id/vote',
@@ -134,6 +199,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
+      // ── Admin shell ───────────────────────────────────────────────────────
       // ── Admin shell ───────────────────────────────────────────────────────
       ShellRoute(
         builder: (context, state, child) => AdminShell(child: child),
@@ -264,24 +330,24 @@ class _ShellNav extends StatelessWidget {
       child: Row(
         children: [
           // Logo icon
-          AppLogo(),
-          // Container(
-          //   width: 32,
-          //   height: 32,
-          //   decoration: BoxDecoration(
-          //     gradient: LinearGradient(
-          //       colors: isAdmin
-          //           ? [AppTheme.accent, AppTheme.primary]
-          //           : [AppTheme.primary, AppTheme.accent],
-          //     ),
-          //     borderRadius: BorderRadius.circular(8),
-          //   ),
-          //   child: Icon(
-          //     isAdmin ? Icons.admin_panel_settings : Icons.how_to_vote,
-          //     color: Colors.white,
-          //     size: 17,
-          //   ),
-          // ),
+          // AppLogo(),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isAdmin
+                    ? [AppTheme.accent, AppTheme.primary]
+                    : [AppTheme.primary, AppTheme.accent],
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isAdmin ? Icons.admin_panel_settings : Icons.how_to_vote,
+              color: Colors.white,
+              size: 17,
+            ),
+          ),
           const SizedBox(width: 10),
           Text(
             isAdmin ? 'Ballotly Orgainiser' : 'Ballotly',
@@ -310,17 +376,18 @@ class _ShellNav extends StatelessWidget {
           if (isMobile)
             Builder(
               builder: (ctx) => IconButton(
-                // icon: const Icon(Icons.menu_rounded),
-                icon: SvgPicture.asset(
-                  'assets/icons/menu.svg',
-                  width: 24,
-                  height: 24,
-                  colorFilter: const ColorFilter.mode(
-                    AppTheme.textPrimary,
-                    BlendMode.srcIn,
-                  ),
-                ),
+                icon: const Icon(LineIcons.bars),
 
+                // icon: SvgPicture.asset(
+                //   'assets/icons/menu.svg',
+                //   width: 24,
+                //   height: 24,
+                //   // color: AppTheme.textPrimary,
+                //   colorFilter: const ColorFilter.mode(
+                //     AppTheme.textPrimary,
+                //     BlendMode.srcIn,
+                //   ),
+                // ),
                 color: AppTheme.textPrimary,
                 onPressed: () => Scaffold.of(ctx).openEndDrawer(),
               ),

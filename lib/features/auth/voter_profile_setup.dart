@@ -30,12 +30,15 @@ class _VoterProfileScreenState extends ConsumerState<VoterProfileScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      await ref.read(supabaseServiceProvider).createUserProfile(
-        fullName: _nameCtrl.text.trim(),
-        accountType: SupabaseConstants.accountTypeVoter,
-      );
+      // await ref.read(supabaseServiceProvider).createUserProfile(
+      //   fullName: _nameCtrl.text.trim(),
+      //   // accountType: SupabaseConstants.accountTypeVoter,
+      // );
       if (mounted) context.go('/elections');
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
@@ -57,7 +60,8 @@ class _VoterProfileScreenState extends ConsumerState<VoterProfileScreen> {
 
             // Welcome icon
             Container(
-              width: 60, height: 60,
+              width: 60,
+              height: 60,
               decoration: BoxDecoration(
                 color: AppTheme.primary.withOpacity(0.1),
                 shape: BoxShape.circle,
@@ -95,8 +99,10 @@ class _VoterProfileScreenState extends ConsumerState<VoterProfileScreen> {
               label: 'Full name',
               controller: _nameCtrl,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Full name is required';
-                if (v.trim().split(' ').length < 2) return 'Please enter your first and last name';
+                if (v == null || v.trim().isEmpty)
+                  return 'Full name is required';
+                if (v.trim().split(' ').length < 2)
+                  return 'Please enter your first and last name';
                 return null;
               },
             ),

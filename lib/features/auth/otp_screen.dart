@@ -81,10 +81,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       );
       // Organiser register — create profile then go to admin
       if (widget.fullName != null) {
-        await ref.read(supabaseServiceProvider).createUserProfile(
-          fullName: widget.fullName!,
-          accountType: SupabaseConstants.accountTypeOrganiser,
-        );
+        // await ref.read(supabaseServiceProvider).createUserProfile(
+        //   fullName: widget.fullName!,
+        //   // accountType: SupabaseConstants.accountTypeOrganiser,
+        // );
       }
       if (mounted) context.go('/admin');
     } else {

@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:line_icons/line_icons.dart';
 import 'package:myapp/core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 
@@ -152,21 +153,20 @@ class _LandingScreenState extends State<LandingScreen>
           // ── Mobile: logo left, menu icon right ───────────────────────────
           : Row(
               children: [
-                // logo,
-                AppLogo(),
+                logo,
                 const Spacer(),
                 Builder(
                   builder: (ctx) => IconButton(
-                    // icon: const Icon(Icons.menu_rounded),
-                    icon: SvgPicture.asset(
-                      'assets/icons/menu.svg',
-                      width: 24,
-                      height: 24,
-                      colorFilter: const ColorFilter.mode(
-                        AppTheme.textPrimary,
-                        BlendMode.srcIn,
-                      ),
-                    ),
+                    icon: const Icon(LineIcons.bars),
+                    // icon: SvgPicture.asset(
+                    //   'assets/icons/menu.svg',
+                    //   width: 24,
+                    //   height: 24,
+                    //   colorFilter: const ColorFilter.mode(
+                    //     AppTheme.textPrimary,
+                    //     BlendMode.srcIn,
+                    //   ),
+                    // ),
                     color: AppTheme.textPrimary,
                     onPressed: () => Scaffold.of(ctx).openEndDrawer(),
                   ),

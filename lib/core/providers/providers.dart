@@ -6,6 +6,7 @@ import '../services/supabase_service.dart';
 // import '../../shared/models/models.dart';
 
 // ─── SERVICE ──────────────────────────────────────────────────────────────────
+// ─── SERVICE ──────────────────────────────────────────────────────────────────
 
 final supabaseServiceProvider = Provider<SupabaseService>((ref) {
   return SupabaseService();
@@ -23,11 +24,21 @@ final currentUserProfileProvider = FutureProvider<UserProfileModel?>((ref) async
   return ref.read(supabaseServiceProvider).getCurrentUserProfile();
 });
 
-// ─── ELECTIONS (voter-facing) ─────────────────────────────────────────────────
+// ─── ELECTIONS (voter-facing — eligible by email) ─────────────────────────────
 
-/// Elections the logged-in voter is eligible for (published, active, closed)
 final myElectionsProvider = FutureProvider<List<ElectionModel>>((ref) async {
   return ref.read(supabaseServiceProvider).getMyElections();
+});
+
+// ─── ELECTIONS (organiser-facing — created by user) ───────────────────────────
+
+final myCreatedElectionsProvider = FutureProvider<List<ElectionModel>>((ref) async {
+  return ref.read(supabaseServiceProvider).getMyCreatedElections();
+});
+
+/// Legacy — returns all elections regardless of owner. Admin use only.
+final allElectionsProvider = FutureProvider<List<ElectionModel>>((ref) async {
+  return ref.read(supabaseServiceProvider).getAllElections();
 });
 
 final electionProvider =
@@ -66,11 +77,19 @@ final electionVoterCountProvider =
 
 // ─── ADMIN ────────────────────────────────────────────────────────────────────
 
-final allElectionsProvider = FutureProvider<List<ElectionModel>>((ref) async {
-  return ref.read(supabaseServiceProvider).getAllElections();
-});
-
 final electionVotersProvider =
     FutureProvider.family<List<VoterModel>, String>((ref, electionId) async {
   return ref.read(supabaseServiceProvider).getElectionVoters(electionId);
+});
+
+// ─── GUEST / PUBLIC ───────────────────────────────────────────────────────────
+
+final electionByCodeProvider =
+    FutureProvider.family<ElectionModel?, String>((ref, code) async {
+  return ref.read(supabaseServiceProvider).getElectionByCode(code);
+});
+
+final publicElectionResultsProvider =
+    FutureProvider.family<List<TallyResult>, String>((ref, electionId) async {
+  return ref.read(supabaseServiceProvider).getPublicElectionResults(electionId);
 });

@@ -14,9 +14,13 @@ class SupabaseConstants {
   static const String votesTable = 'votes';
   static const String auditLogTable = 'audit_log';
 
-  // Account types
-  static const String accountTypeVoter = 'voter';
-  static const String accountTypeOrganiser = 'organiser';
+  // Verification modes
+  static const String verificationManual = 'manual';
+  static const String verificationOtp    = 'otp';
+
+  // Premium limits
+  /// Free tier max voters per election. Exceeding this is allowed but flagged.
+  static const int freeVoterLimit = 200;
 
   // Election statuses
   static const String statusDraft = 'draft';

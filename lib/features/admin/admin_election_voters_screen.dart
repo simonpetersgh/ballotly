@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:myapp/core/constants/supabase_constants.dart';
+import 'package:myapp/core/models/models.dart';
 import 'package:myapp/features/admin/voters_import_sheet.dart';
 import 'package:myapp/features/shared_widgets.dart';
 import '../../../../core/providers/providers.dart';
@@ -22,6 +24,8 @@ class _AdminElectionVotersScreenState
     extends ConsumerState<AdminElectionVotersScreen> {
   final _emailController = TextEditingController();
   final _nameController = TextEditingController();
+  final _primaryController = TextEditingController();
+  final _secondaryController = TextEditingController();
   final _searchController = TextEditingController();
   bool _adding = false;
   String? _error;
@@ -31,9 +35,7 @@ class _AdminElectionVotersScreenState
   void initState() {
     super.initState();
     _searchController.addListener(
-      () => setState(() {
-        _search = _searchController.text.toLowerCase();
-      }),
+      () => setState(() => _search = _searchController.text.toLowerCase()),
     );
   }
 
@@ -41,25 +43,34 @@ class _AdminElectionVotersScreenState
   void dispose() {
     _emailController.dispose();
     _nameController.dispose();
+    _primaryController.dispose();
+    _secondaryController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _addVoter() async {
+  Future<void> _addVoter(ElectionModel election) async {
     final email = _emailController.text.trim();
     final name = _nameController.text.trim();
     if (email.isEmpty || name.isEmpty) {
-      setState(() {
-        _error = 'Email and name are both required.';
-      });
+      setState(() => _error = 'Email and name are both required.');
       return;
     }
     if (!email.contains('@')) {
-      setState(() {
-        _error = 'Enter a valid email address.';
-      });
+      setState(() => _error = 'Enter a valid email address.');
       return;
     }
+
+    // ── PREMIUM GATE — voter limit ─────────────────────────────────────────
+    // Uncomment the block below to enforce the free tier cap.
+    // final currentVoters = ref.read(electionVotersProvider(widget.electionId)).valueOrNull ?? [];
+    // if (!election.isPaid && currentVoters.length >= SupabaseConstants.freeVoterLimit) {
+    //   setState(() => _error =
+    //       'Free elections are limited to ${SupabaseConstants.freeVoterLimit} voters. '
+    //       'Upgrade this election to add more.');
+    //   return;
+    // }
+
     setState(() {
       _adding = true;
       _error = null;
@@ -71,9 +82,19 @@ class _AdminElectionVotersScreenState
             electionId: widget.electionId,
             email: email,
             fullName: name,
+            primaryToken: _primaryController.text.trim().isEmpty
+                ? null
+                : _primaryController.text.trim(),
+            secondaryToken:
+                election.secondaryTokenEnabled &&
+                    _secondaryController.text.trim().isNotEmpty
+                ? _secondaryController.text.trim()
+                : null,
           );
       _emailController.clear();
       _nameController.clear();
+      _primaryController.clear();
+      _secondaryController.clear();
       ref.refresh(electionVotersProvider(widget.electionId));
     } catch (e) {
       setState(() {
@@ -82,10 +103,7 @@ class _AdminElectionVotersScreenState
             : 'Failed to add voter.';
       });
     } finally {
-      if (mounted)
-        setState(() {
-          _adding = false;
-        });
+      if (mounted) setState(() => _adding = false);
     }
   }
 
@@ -95,11 +113,18 @@ class _AdminElectionVotersScreenState
   }
 
   Future<void> _openImport() async {
+    final electionAsync = ref.read(electionProvider(widget.electionId));
+    final election = electionAsync.when(
+      data: (e) => e,
+      loading: () => null,
+      error: (_, __) => null,
+    );
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => VoterImportSheet(electionId: widget.electionId),
+      builder: (_) =>
+          VoterImportSheet(electionId: widget.electionId, election: election),
     );
     if (result == true) {
       ref.refresh(electionVotersProvider(widget.electionId));
@@ -115,7 +140,7 @@ class _AdminElectionVotersScreenState
       backgroundColor: AppTheme.surface,
       body: Column(
         children: [
-          // Header bar
+          // Header
           Container(
             color: AppTheme.cardBg,
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
@@ -195,118 +220,171 @@ class _AdminElectionVotersScreenState
 
                   return CustomScrollView(
                     slivers: [
-                      // Add voter
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.all(20),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTheme.cardBg,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppTheme.border),
-                            ),
-                            child: Column(
+                          child: electionAsync.when(
+                            loading: () => const SizedBox.shrink(),
+                            error: (_, __) => const SizedBox.shrink(),
+                            data: (election) => Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Add Voter',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppTheme.textPrimary,
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.primary.withOpacity(
-                                          0.1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        '${voters.length} total',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: AppTheme.primary,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 14),
-                                if (_error != null)
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(10),
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.danger.withOpacity(0.08),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      _error!,
-                                      style: const TextStyle(
-                                        color: AppTheme.danger,
-                                        fontSize: 13,
-                                      ),
-                                    ),
+                                // ── Voter limit banner ─────────────────────
+                                if (voters.length >=
+                                        SupabaseConstants.freeVoterLimit &&
+                                    !election.isPaid) ...[
+                                  _VoterLimitBanner(count: voters.length),
+                                  const SizedBox(height: 14),
+                                ],
+
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.cardBg,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppTheme.border),
                                   ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _nameController,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Full Name',
-                                          isDense: true,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _emailController,
-                                        keyboardType:
-                                            TextInputType.emailAddress,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Email',
-                                          isDense: true,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: _adding ? null : _addVoter,
-                                    icon: _adding
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text(
+                                            'Add Voter',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppTheme.textPrimary,
                                             ),
-                                          )
-                                        : const Icon(
-                                            Icons.person_add,
-                                            size: 16,
                                           ),
-                                    label: Text(
-                                      _adding ? 'Adding...' : 'Add Voter',
-                                    ),
+                                          _VoterCountChip(
+                                            count: voters.length,
+                                            isPaid: election.isPaid,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 14),
+                                      if (_error != null)
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(10),
+                                          margin: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.danger.withOpacity(
+                                              0.08,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            _error!,
+                                            style: const TextStyle(
+                                              color: AppTheme.danger,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextFormField(
+                                              controller: _nameController,
+                                              decoration: const InputDecoration(
+                                                labelText: 'Full Name',
+                                                isDense: true,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: TextFormField(
+                                              controller: _emailController,
+                                              keyboardType:
+                                                  TextInputType.emailAddress,
+                                              decoration: const InputDecoration(
+                                                labelText: 'Email',
+                                                isDense: true,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+
+                                      // Token fields (manual mode only)
+                                      if (election.verificationMode ==
+                                          SupabaseConstants
+                                              .verificationManual) ...[
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextFormField(
+                                                controller: _primaryController,
+                                                decoration:
+                                                    const InputDecoration(
+                                                      labelText:
+                                                          'Primary Token',
+                                                      hintText:
+                                                          'e.g. student ID',
+                                                      isDense: true,
+                                                    ),
+                                              ),
+                                            ),
+                                            if (election
+                                                .secondaryTokenEnabled) ...[
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: TextFormField(
+                                                  controller:
+                                                      _secondaryController,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText:
+                                                            'Secondary Token',
+                                                        hintText:
+                                                            'e.g. date of birth',
+                                                        isDense: true,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ],
+
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton.icon(
+                                          onPressed: _adding
+                                              ? null
+                                              : () => _addVoter(election),
+                                          icon: _adding
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.person_add,
+                                                  size: 16,
+                                                ),
+                                          label: Text(
+                                            _adding ? 'Adding...' : 'Add Voter',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -315,7 +393,6 @@ class _AdminElectionVotersScreenState
                         ),
                       ),
 
-                      // Search bar
                       if (voters.length > 6)
                         SliverToBoxAdapter(
                           child: Padding(
@@ -384,10 +461,24 @@ class _AdminElectionVotersScreenState
                                     fontSize: 14,
                                   ),
                                 ),
-                                subtitle: Text(
-                                  v.email,
-                                  style: const TextStyle(fontSize: 12),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      v.email,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    if (v.primaryToken != null)
+                                      Text(
+                                        'Token: ${v.primaryToken}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.textMuted,
+                                        ),
+                                      ),
+                                  ],
                                 ),
+                                isThreeLine: v.primaryToken != null,
                                 trailing: IconButton(
                                   icon: const Icon(
                                     Icons.remove_circle_outline,
@@ -406,6 +497,115 @@ class _AdminElectionVotersScreenState
                   );
                 },
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── VOTER COUNT CHIP ─────────────────────────────────────────────────────────
+
+class _VoterCountChip extends StatelessWidget {
+  final int count;
+  final bool isPaid;
+  const _VoterCountChip({required this.count, required this.isPaid});
+
+  @override
+  Widget build(BuildContext context) {
+    final overLimit = count >= SupabaseConstants.freeVoterLimit && !isPaid;
+    final color = overLimit ? AppTheme.warning : AppTheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (overLimit)
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: Icon(
+                Icons.warning_amber_rounded,
+                size: 11,
+                color: AppTheme.warning,
+              ),
+            ),
+          Text(
+            isPaid
+                ? '$count total'
+                : '$count / ${SupabaseConstants.freeVoterLimit}',
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── VOTER LIMIT BANNER ───────────────────────────────────────────────────────
+
+class _VoterLimitBanner extends StatelessWidget {
+  final int count;
+  const _VoterLimitBanner({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.warning.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.warning.withOpacity(0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.star_rounded, size: 18, color: AppTheme.warning),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count voters — above the free tier limit of ${SupabaseConstants.freeVoterLimit}.',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'You can keep adding voters. Upgrade to a paid plan before '
+                  'publishing to ensure all voters can access the ballot.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+                // ── PREMIUM GATE — upgrade CTA (uncomment when ready) ──────
+                // const SizedBox(height: 8),
+                // ElevatedButton.icon(
+                //   onPressed: () { /* navigate to upgrade flow */ },
+                //   icon: const Icon(Icons.upgrade, size: 14),
+                //   label: const Text('Upgrade Election'),
+                //   style: ElevatedButton.styleFrom(
+                //     backgroundColor: AppTheme.warning,
+                //     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                //     textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                //   ),
+                // ),
+              ],
             ),
           ),
         ],

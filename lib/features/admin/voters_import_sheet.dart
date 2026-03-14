@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:myapp/core/constants/supabase_constants.dart';
+import 'package:myapp/core/models/models.dart';
 import '../../../../core/providers/providers.dart';
 import '../../../../core/theme/app_theme.dart';
 
@@ -13,7 +15,8 @@ enum _ImportStep { pick, map, preview, importing, done }
 
 class VoterImportSheet extends StatefulWidget {
   final String electionId;
-  const VoterImportSheet({required this.electionId});
+  final ElectionModel? election; // nullable — fetched async if not passed
+  const VoterImportSheet({super.key, required this.electionId, this.election});
 
   @override
   State<VoterImportSheet> createState() => VoterImportSheetState();
@@ -64,16 +67,15 @@ class VoterImportSheetState extends State<VoterImportSheet> {
         .toList();
 
     if (lines.length < 2) {
-      setState(
-        () => _pickError =
-            'CSV must have a header row and at least one data row.',
-      );
+      setState(() => _pickError =
+          'CSV must have a header row and at least one data row.');
       return;
     }
 
     final headers = _splitLine(lines[0]);
     if (headers.length < 2) {
-      setState(() => _pickError = 'CSV must have at least 2 columns.');
+      setState(() =>
+          _pickError = 'CSV must have at least 2 columns.');
       return;
     }
 
@@ -132,31 +134,23 @@ class VoterImportSheetState extends State<VoterImportSheet> {
     final ei = _headers.indexOf(_emailCol!);
     final ni = _headers.indexOf(_nameCol!);
 
-    final mapped = _rows
-        .map(
-          (r) => {
-            'email': (ei < r.length ? r[ei] : '').trim().toLowerCase(),
-            'full_name': (ni < r.length ? r[ni] : '').trim(),
-          },
-        )
-        .toList();
+    final mapped = _rows.map((r) => {
+          'email': (ei < r.length ? r[ei] : '').trim().toLowerCase(),
+          'full_name': (ni < r.length ? r[ni] : '').trim(),
+        }).toList();
 
     setState(() {
       _valid = mapped
-          .where(
-            (r) =>
-                r['email']!.contains('@') &&
-                r['email']!.isNotEmpty &&
-                r['full_name']!.isNotEmpty,
-          )
+          .where((r) =>
+              r['email']!.contains('@') &&
+              r['email']!.isNotEmpty &&
+              r['full_name']!.isNotEmpty)
           .toList();
       _invalid = mapped
-          .where(
-            (r) =>
-                !r['email']!.contains('@') ||
-                r['email']!.isEmpty ||
-                r['full_name']!.isEmpty,
-          )
+          .where((r) =>
+              !r['email']!.contains('@') ||
+              r['email']!.isEmpty ||
+              r['full_name']!.isEmpty)
           .toList();
       _step = _ImportStep.preview;
     });
@@ -165,14 +159,27 @@ class VoterImportSheetState extends State<VoterImportSheet> {
   // ── Import ────────────────────────────────────────────────────────────────
 
   Future<void> _import(WidgetRef ref) async {
-    setState(() {
-      _step = _ImportStep.importing;
-      _importError = null;
-    });
+    setState(() { _step = _ImportStep.importing; _importError = null; });
     try {
-      await ref
-          .read(supabaseServiceProvider)
-          .importVoters(electionId: widget.electionId, voters: _valid);
+      // ── PREMIUM GATE — bulk import limit ──────────────────────────────────
+      // Uncomment to enforce the free tier cap during CSV import.
+      // final svc = ref.read(supabaseServiceProvider);
+      // final election = await svc.getElection(widget.electionId);
+      // final currentCount = await svc.getElectionVoterCount(widget.electionId);
+      // if (!election.isPaid && currentCount + _valid.length > SupabaseConstants.freeVoterLimit) {
+      //   setState(() {
+      //     _importError =
+      //         'Importing ${_valid.length} voters would exceed the free tier limit '
+      //         'of ${SupabaseConstants.freeVoterLimit}. Upgrade this election or reduce the list.';
+      //     _step = _ImportStep.preview;
+      //   });
+      //   return;
+      // }
+
+      await ref.read(supabaseServiceProvider).importVoters(
+            electionId: widget.electionId,
+            voters: _valid,
+          );
       setState(() {
         _importedCount = _valid.length;
         _step = _ImportStep.done;
@@ -189,110 +196,90 @@ class VoterImportSheetState extends State<VoterImportSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer(
-      builder: (context, ref, _) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Drag handle
-              Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+    return Consumer(builder: (context, ref, _) {
+      return Container(
+        decoration: const BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.border,
+                borderRadius: BorderRadius.circular(2),
               ),
+            ),
 
-              // Title row
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.upload_file_rounded,
-                      color: AppTheme.primary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      _stepTitle,
+            // Title row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.upload_file_rounded,
+                      color: AppTheme.primary, size: 20),
+                  const SizedBox(width: 10),
+                  Text(_stepTitle,
                       style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: AppTheme.textMuted,
-                      ),
-                      onPressed: () =>
-                          Navigator.pop(context, _step == _ImportStep.done),
-                    ),
-                  ],
-                ),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: AppTheme.textMuted),
+                    onPressed: () =>
+                        Navigator.pop(context, _step == _ImportStep.done),
+                  ),
+                ],
+              ),
+            ),
+
+            // Step dots
+            if (_step != _ImportStep.done &&
+                _step != _ImportStep.importing)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                child: _StepIndicator(current: _step),
               ),
 
-              // Step dots
-              if (_step != _ImportStep.done && _step != _ImportStep.importing)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                  child: _StepIndicator(current: _step),
-                ),
-
-              // Body
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildBody(ref),
-                ),
+            // Body
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _buildBody(ref),
               ),
-            ],
-          ),
-        );
-      },
-    );
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   String get _stepTitle {
     switch (_step) {
-      case _ImportStep.pick:
-        return 'Import Voters from CSV';
-      case _ImportStep.map:
-        return 'Map Columns';
-      case _ImportStep.preview:
-        return 'Preview Import';
-      case _ImportStep.importing:
-        return 'Importing...';
-      case _ImportStep.done:
-        return 'Import Complete';
+      case _ImportStep.pick:      return 'Import Voters from CSV';
+      case _ImportStep.map:       return 'Map Columns';
+      case _ImportStep.preview:   return 'Preview Import';
+      case _ImportStep.importing: return 'Importing...';
+      case _ImportStep.done:      return 'Import Complete';
     }
   }
 
   Widget _buildBody(WidgetRef ref) {
     switch (_step) {
-      case _ImportStep.pick:
-        return _pickBody();
-      case _ImportStep.map:
-        return _mapBody();
-      case _ImportStep.preview:
-        return _previewBody(ref);
-      case _ImportStep.importing:
-        return _importingBody();
-      case _ImportStep.done:
-        return _doneBody();
+      case _ImportStep.pick:      return _pickBody();
+      case _ImportStep.map:       return _mapBody();
+      case _ImportStep.preview:   return _previewBody(ref);
+      case _ImportStep.importing: return _importingBody();
+      case _ImportStep.done:      return _doneBody();
     }
   }
 
@@ -311,23 +298,19 @@ class VoterImportSheetState extends State<VoterImportSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'CSV Format',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
+              const Text('CSV Format',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AppTheme.textPrimary)),
               const SizedBox(height: 8),
               const Text(
                 'Your file must have columns for email and full name. '
                 'Extra columns are fine — you will map the right ones in the next step.',
                 style: TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.textSecondary,
-                  height: 1.5,
-                ),
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                    height: 1.5),
               ),
               const SizedBox(height: 12),
               Container(
@@ -343,10 +326,9 @@ class VoterImportSheetState extends State<VoterImportSheet> {
                   '1,Kwame Mensah,kwame@uni.edu.gh,CS\n'
                   '2,Ama Owusu,ama@uni.edu.gh,Law',
                   style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    color: AppTheme.textSecondary,
-                  ),
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      color: AppTheme.textSecondary),
                 ),
               ),
             ],
@@ -362,10 +344,9 @@ class VoterImportSheetState extends State<VoterImportSheet> {
               color: AppTheme.danger.withOpacity(0.08),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(
-              _pickError!,
-              style: const TextStyle(color: AppTheme.danger, fontSize: 13),
-            ),
+            child: Text(_pickError!,
+                style:
+                    const TextStyle(color: AppTheme.danger, fontSize: 13)),
           ),
         SizedBox(
           width: double.infinity,
@@ -374,8 +355,7 @@ class VoterImportSheetState extends State<VoterImportSheet> {
             icon: const Icon(Icons.folder_open_rounded, size: 18),
             label: const Text('Choose CSV File'),
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
+                padding: const EdgeInsets.symmetric(vertical: 14)),
           ),
         ),
         const SizedBox(height: 20),
@@ -386,8 +366,9 @@ class VoterImportSheetState extends State<VoterImportSheet> {
   // ── Map body ──────────────────────────────────────────────────────────────
 
   Widget _mapBody() {
-    final canProceed =
-        _emailCol != null && _nameCol != null && _emailCol != _nameCol;
+    final canProceed = _emailCol != null &&
+        _nameCol != null &&
+        _emailCol != _nameCol;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -395,10 +376,7 @@ class VoterImportSheetState extends State<VoterImportSheet> {
         Text(
           '${_rows.length} data rows found. Select which column contains each field.',
           style: const TextStyle(
-            fontSize: 13,
-            color: AppTheme.textSecondary,
-            height: 1.5,
-          ),
+              fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
         ),
         const SizedBox(height: 20),
 
@@ -433,14 +411,11 @@ class VoterImportSheetState extends State<VoterImportSheet> {
         const SizedBox(height: 20),
 
         // Raw preview
-        const Text(
-          'File preview (first 3 rows):',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textMuted,
-          ),
-        ),
+        const Text('File preview (first 3 rows):',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textMuted)),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
@@ -455,14 +430,10 @@ class VoterImportSheetState extends State<VoterImportSheet> {
               if (_rows.length > 3)
                 Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Text(
-                    '...and ${_rows.length - 3} more rows',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.textMuted,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+                  child: Text('...and ${_rows.length - 3} more rows',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppTheme.textMuted),
+                      textAlign: TextAlign.center),
                 ),
             ],
           ),
@@ -500,17 +471,15 @@ class VoterImportSheetState extends State<VoterImportSheet> {
         Row(
           children: [
             _SummaryChip(
-              count: _valid.length,
-              label: 'will import',
-              color: AppTheme.success,
-            ),
+                count: _valid.length,
+                label: 'will import',
+                color: AppTheme.success),
             const SizedBox(width: 8),
             if (_invalid.isNotEmpty)
               _SummaryChip(
-                count: _invalid.length,
-                label: 'will skip',
-                color: AppTheme.danger,
-              ),
+                  count: _invalid.length,
+                  label: 'will skip',
+                  color: AppTheme.danger),
           ],
         ),
         const SizedBox(height: 16),
@@ -524,21 +493,54 @@ class VoterImportSheetState extends State<VoterImportSheet> {
               color: AppTheme.danger.withOpacity(0.08),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(
-              _importError!,
-              style: const TextStyle(color: AppTheme.danger, fontSize: 13),
-            ),
+            child: Text(_importError!,
+                style:
+                    const TextStyle(color: AppTheme.danger, fontSize: 13)),
           ),
 
         if (_valid.isNotEmpty) ...[
-          const Text(
-            'Valid — will be imported',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
+          // ── PREMIUM GATE — import limit info banner ──────────────────────
+          // Shows informational banner if importing would exceed the free limit.
+          // Currently does NOT block — uncomment the guard in _import() to enforce.
+          if (widget.election != null &&
+              !widget.election!.isPaid &&
+              _valid.length > SupabaseConstants.freeVoterLimit) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: AppTheme.warning.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.warning.withOpacity(0.3)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.star_rounded,
+                      size: 15, color: AppTheme.warning),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_valid.length} voters exceeds the free tier limit of '
+                      '${SupabaseConstants.freeVoterLimit}. You can import them '
+                      'now but will need to upgrade before publishing.',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                          height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
+
+          const Text('Valid — will be imported',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary)),
           const SizedBox(height: 8),
           Container(
             constraints: const BoxConstraints(maxHeight: 200),
@@ -555,33 +557,22 @@ class VoterImportSheetState extends State<VoterImportSheet> {
                 final v = _valid[i];
                 return Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
+                      horizontal: 12, vertical: 10),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: AppTheme.success,
-                        size: 16,
-                      ),
+                      const Icon(Icons.check_circle_rounded,
+                          color: AppTheme.success, size: 16),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          v['full_name']!,
+                        child: Text(v['full_name']!,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                      Text(v['email']!,
                           style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        v['email']!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
+                              fontSize: 12,
+                              color: AppTheme.textSecondary)),
                     ],
                   ),
                 );
@@ -592,64 +583,52 @@ class VoterImportSheetState extends State<VoterImportSheet> {
         ],
 
         if (_invalid.isNotEmpty) ...[
-          const Text(
-            'Will be skipped — invalid data',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.danger,
-            ),
-          ),
+          const Text('Will be skipped — invalid data',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.danger)),
           const SizedBox(height: 8),
           Container(
             constraints: const BoxConstraints(maxHeight: 120),
             decoration: BoxDecoration(
               color: AppTheme.danger.withOpacity(0.04),
-              border: Border.all(color: AppTheme.danger.withOpacity(0.2)),
+              border:
+                  Border.all(color: AppTheme.danger.withOpacity(0.2)),
               borderRadius: BorderRadius.circular(8),
             ),
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: _invalid.length,
-              separatorBuilder: (_, __) =>
-                  Divider(height: 1, color: AppTheme.danger.withOpacity(0.1)),
+              separatorBuilder: (_, __) => Divider(
+                  height: 1, color: AppTheme.danger.withOpacity(0.1)),
               itemBuilder: (_, i) {
                 final v = _invalid[i];
                 final reason = v['email']!.isEmpty
                     ? 'Missing email'
                     : !v['email']!.contains('@')
-                    ? 'Invalid email'
-                    : 'Missing name';
+                        ? 'Invalid email'
+                        : 'Missing name';
                 return Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
+                      horizontal: 12, vertical: 8),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.error_outline_rounded,
-                        color: AppTheme.danger,
-                        size: 15,
-                      ),
+                      const Icon(Icons.error_outline_rounded,
+                          color: AppTheme.danger, size: 15),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           '${v['full_name']!.isEmpty ? '(no name)' : v['full_name']!}  ·  '
                           '${v['email']!.isEmpty ? '(no email)' : v['email']!}',
                           style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textSecondary,
-                          ),
+                              fontSize: 12,
+                              color: AppTheme.textSecondary),
                         ),
                       ),
-                      Text(
-                        reason,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.danger,
-                        ),
-                      ),
+                      Text(reason,
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.danger)),
                     ],
                   ),
                 );
@@ -691,10 +670,9 @@ class VoterImportSheetState extends State<VoterImportSheet> {
         children: [
           const CircularProgressIndicator(),
           const SizedBox(height: 20),
-          Text(
-            'Importing ${_valid.length} voters...',
-            style: const TextStyle(color: AppTheme.textSecondary),
-          ),
+          Text('Importing ${_valid.length} voters...',
+              style:
+                  const TextStyle(color: AppTheme.textSecondary)),
         ],
       ),
     );
@@ -708,36 +686,25 @@ class VoterImportSheetState extends State<VoterImportSheet> {
       child: Column(
         children: [
           Container(
-            width: 64,
-            height: 64,
+            width: 64, height: 64,
             decoration: BoxDecoration(
               color: AppTheme.success.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.check_rounded,
-              color: AppTheme.success,
-              size: 32,
-            ),
+            child: const Icon(Icons.check_rounded,
+                color: AppTheme.success, size: 32),
           ),
           const SizedBox(height: 16),
-          Text(
-            '$_importedCount voters imported',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: AppTheme.textPrimary,
-            ),
-          ),
+          Text('$_importedCount voters imported',
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary)),
           if (_invalid.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(
-              '${_invalid.length} rows skipped.',
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppTheme.textSecondary,
-              ),
-            ),
+            Text('${_invalid.length} rows skipped.',
+                style: const TextStyle(
+                    fontSize: 13, color: AppTheme.textSecondary)),
           ],
           const SizedBox(height: 24),
           SizedBox(
@@ -755,7 +722,6 @@ class VoterImportSheetState extends State<VoterImportSheet> {
 }
 
 // ─── SMALL WIDGETS ────────────────────────────────────────────────────────────
-
 class _StepIndicator extends StatelessWidget {
   final _ImportStep current;
   const _StepIndicator({required this.current});
@@ -772,9 +738,8 @@ class _StepIndicator extends StatelessWidget {
           final done = (i ~/ 2) < idx;
           return Expanded(
             child: Container(
-              height: 2,
-              color: done ? AppTheme.primary : AppTheme.border,
-            ),
+                height: 2,
+                color: done ? AppTheme.primary : AppTheme.border),
           );
         }
         final si = i ~/ 2;
@@ -783,37 +748,38 @@ class _StepIndicator extends StatelessWidget {
         return Column(
           children: [
             Container(
-              width: 28,
-              height: 28,
+              width: 28, height: 28,
               decoration: BoxDecoration(
                 color: done || active ? AppTheme.primary : AppTheme.cardBg,
                 border: Border.all(
-                  color: done || active ? AppTheme.primary : AppTheme.border,
-                ),
+                    color: done || active
+                        ? AppTheme.primary
+                        : AppTheme.border),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: done
-                    ? const Icon(Icons.check, color: Colors.white, size: 14)
-                    : Text(
-                        '${si + 1}',
+                    ? const Icon(Icons.check,
+                        color: Colors.white, size: 14)
+                    : Text('${si + 1}',
                         style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: active ? Colors.white : AppTheme.textMuted,
-                        ),
-                      ),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: active
+                                ? Colors.white
+                                : AppTheme.textMuted)),
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              labels[si],
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                color: active ? AppTheme.primary : AppTheme.textMuted,
-              ),
-            ),
+            Text(labels[si],
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: active
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: active
+                        ? AppTheme.primary
+                        : AppTheme.textMuted)),
           ],
         );
       }),
@@ -843,28 +809,23 @@ class _ColumnDropdown extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary,
-          ),
-        ),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary)),
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
           value: value,
-          hint: Text(
-            hint,
-            style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
-          ),
+          hint: Text(hint,
+              style: const TextStyle(
+                  fontSize: 13, color: AppTheme.textMuted)),
           decoration: InputDecoration(
-            prefixIcon: Icon(icon, size: 18, color: AppTheme.textMuted),
+            prefixIcon:
+                Icon(icon, size: 18, color: AppTheme.textMuted),
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 14,
-            ),
+                horizontal: 12, vertical: 14),
           ),
           items: headers
               .map((h) => DropdownMenuItem(value: h, child: Text(h)))
@@ -885,25 +846,23 @@ class _TableRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: isHeader ? AppTheme.primary.withOpacity(0.05) : null,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: cells
             .take(4)
-            .map(
-              (c) => Expanded(
-                child: Text(
-                  c,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isHeader ? FontWeight.w700 : FontWeight.w400,
-                    color: isHeader
-                        ? AppTheme.textPrimary
-                        : AppTheme.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            )
+            .map((c) => Expanded(
+                  child: Text(c,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isHeader
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                          color: isHeader
+                              ? AppTheme.textPrimary
+                              : AppTheme.textSecondary),
+                      overflow: TextOverflow.ellipsis),
+                ))
             .toList(),
       ),
     );
@@ -915,16 +874,16 @@ class _SummaryChip extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _SummaryChip({
-    required this.count,
-    required this.label,
-    required this.color,
-  });
+  const _SummaryChip(
+      {required this.count,
+      required this.label,
+      required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(20),
@@ -933,16 +892,14 @@ class _SummaryChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            '$count',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: color,
-              fontSize: 14,
-            ),
-          ),
+          Text('$count',
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                  fontSize: 14)),
           const SizedBox(width: 5),
-          Text(label, style: TextStyle(fontSize: 12, color: color)),
+          Text(label,
+              style: TextStyle(fontSize: 12, color: color)),
         ],
       ),
     );

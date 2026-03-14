@@ -1,4 +1,4 @@
-// lib/shared/models/models.dart
+// lib/core/models/models.dart
 
 // ─── USER PROFILE ─────────────────────────────────────────────────────────────
 
@@ -6,29 +6,20 @@ class UserProfileModel {
   final String id;
   final String email;
   final String fullName;
-  final String accountType; // 'voter' | 'organiser'
-  final bool isAdmin;
   final DateTime createdAt;
 
   const UserProfileModel({
     required this.id,
     required this.email,
     required this.fullName,
-    required this.accountType,
-    this.isAdmin = false,
     required this.createdAt,
   });
-
-  bool get isOrganiser => accountType == 'organiser';
-  bool get isVoter => accountType == 'voter';
 
   factory UserProfileModel.fromJson(Map<String, dynamic> json) =>
       UserProfileModel(
         id: json['id'],
         email: json['email'],
         fullName: json['full_name'],
-        accountType: json['account_type'] ?? 'voter',
-        isAdmin: json['is_admin'] ?? false,
         createdAt: DateTime.parse(json['created_at']),
       );
 }
@@ -40,6 +31,9 @@ class VoterModel {
   final String electionId;
   final String email;
   final String fullName;
+  final String? primaryToken;
+  final String? secondaryToken;
+  final bool hasVoted;
   final DateTime addedAt;
 
   const VoterModel({
@@ -47,22 +41,30 @@ class VoterModel {
     required this.electionId,
     required this.email,
     required this.fullName,
+    this.primaryToken,
+    this.secondaryToken,
+    this.hasVoted = false,
     required this.addedAt,
   });
 
   factory VoterModel.fromJson(Map<String, dynamic> json) => VoterModel(
-        id: json['id'],
-        electionId: json['election_id'],
-        email: json['email'],
-        fullName: json['full_name'],
-        addedAt: DateTime.parse(json['added_at']),
-      );
+    id: json['id'],
+    electionId: json['election_id'],
+    email: json['email'],
+    fullName: json['full_name'],
+    primaryToken: json['primary_token'],
+    secondaryToken: json['secondary_token'],
+    hasVoted: json['has_voted'] ?? false,
+    addedAt: DateTime.parse(json['added_at']),
+  );
 
   Map<String, dynamic> toJson() => {
-        'election_id': electionId,
-        'email': email,
-        'full_name': fullName,
-      };
+    'election_id': electionId,
+    'email': email,
+    'full_name': fullName,
+    if (primaryToken != null) 'primary_token': primaryToken,
+    if (secondaryToken != null) 'secondary_token': secondaryToken,
+  };
 }
 
 // ─── ELECTION ─────────────────────────────────────────────────────────────────
@@ -77,7 +79,18 @@ class ElectionModel {
   final String createdBy;
   final DateTime createdAt;
   final List<PositionModel> positions;
-  final String? code; // Election entry code for guest voting
+  final String? code;
+
+  // ── Verification & premium ──────────────────────────────────────────────────
+  /// 'manual' — voters authenticate with email + token(s).
+  /// 'otp'    — voters authenticate with email + one-time code (premium).
+  final String verificationMode;
+
+  /// Whether a secondary token is required for verification.
+  final bool secondaryTokenEnabled;
+
+  /// Whether this election has been unlocked as paid.
+  final bool isPaid;
 
   const ElectionModel({
     required this.id,
@@ -90,6 +103,9 @@ class ElectionModel {
     required this.createdAt,
     this.positions = const [],
     this.code,
+    this.verificationMode = 'manual',
+    this.secondaryTokenEnabled = false,
+    this.isPaid = false,
   });
 
   bool get isDraft => status == 'draft';
@@ -99,20 +115,26 @@ class ElectionModel {
   bool get isVisibleToVoters =>
       status == 'published' || status == 'active' || status == 'closed';
 
+  bool get isManual => verificationMode == 'manual';
+  bool get isOtp => verificationMode == 'otp';
+
   factory ElectionModel.fromJson(Map<String, dynamic> json) => ElectionModel(
-        id: json['id'],
-        title: json['title'],
-        description: json['description'],
-        status: json['status'],
-        startsAt: DateTime.parse(json['starts_at']),
-        endsAt: DateTime.parse(json['ends_at']),
-        createdBy: json['created_by'],
-        createdAt: DateTime.parse(json['created_at']),
-        code: json['code'],
-        positions: (json['positions'] as List<dynamic>? ?? [])
-            .map((p) => PositionModel.fromJson(p))
-            .toList(),
-      );
+    id: json['id'],
+    title: json['title'],
+    description: json['description'],
+    status: json['status'],
+    startsAt: DateTime.parse(json['starts_at']),
+    endsAt: DateTime.parse(json['ends_at']),
+    createdBy: json['created_by'],
+    createdAt: DateTime.parse(json['created_at']),
+    code: json['code'],
+    positions: (json['positions'] as List<dynamic>? ?? [])
+        .map((p) => PositionModel.fromJson(p))
+        .toList(),
+    verificationMode: json['verification_mode'] ?? 'manual',
+    secondaryTokenEnabled: json['secondary_token_enabled'] ?? false,
+    isPaid: json['is_paid'] ?? false,
+  );
 }
 
 // ─── POSITION ─────────────────────────────────────────────────────────────────
@@ -132,7 +154,6 @@ class PositionModel {
     this.candidates = const [],
   });
 
-  /// Candidates sorted by ballot_number if set, otherwise insertion order
   List<CandidateModel> get sortedCandidates {
     final hasBallot = candidates.any((c) => c.ballotNumber != null);
     if (!hasBallot) return candidates;
@@ -147,14 +168,14 @@ class PositionModel {
   }
 
   factory PositionModel.fromJson(Map<String, dynamic> json) => PositionModel(
-        id: json['id'],
-        electionId: json['election_id'],
-        title: json['title'],
-        displayOrder: json['display_order'] ?? 0,
-        candidates: (json['candidates'] as List<dynamic>? ?? [])
-            .map((c) => CandidateModel.fromJson(c))
-            .toList(),
-      );
+    id: json['id'],
+    electionId: json['election_id'],
+    title: json['title'],
+    displayOrder: json['display_order'] ?? 0,
+    candidates: (json['candidates'] as List<dynamic>? ?? [])
+        .map((c) => CandidateModel.fromJson(c))
+        .toList(),
+  );
 }
 
 // ─── CANDIDATE ────────────────────────────────────────────────────────────────
@@ -165,7 +186,7 @@ class CandidateModel {
   final String name;
   final String? bio;
   final String? photoUrl;
-  final int? ballotNumber; // Optional — displayed as "1", "2", "3" on ballot
+  final int? ballotNumber;
 
   const CandidateModel({
     required this.id,
@@ -177,13 +198,13 @@ class CandidateModel {
   });
 
   factory CandidateModel.fromJson(Map<String, dynamic> json) => CandidateModel(
-        id: json['id'],
-        positionId: json['position_id'],
-        name: json['name'],
-        bio: json['bio'],
-        photoUrl: json['photo_url'],
-        ballotNumber: json['ballot_number'],
-      );
+    id: json['id'],
+    positionId: json['position_id'],
+    name: json['name'],
+    bio: json['bio'],
+    photoUrl: json['photo_url'],
+    ballotNumber: json['ballot_number'],
+  );
 }
 
 // ─── VOTE ─────────────────────────────────────────────────────────────────────
@@ -204,12 +225,12 @@ class VoteModel {
   });
 
   factory VoteModel.fromJson(Map<String, dynamic> json) => VoteModel(
-        id: json['id'],
-        voterId: json['voter_id'],
-        positionId: json['position_id'],
-        candidateId: json['candidate_id'],
-        submittedAt: DateTime.parse(json['submitted_at']),
-      );
+    id: json['id'],
+    voterId: json['voter_id'],
+    positionId: json['position_id'],
+    candidateId: json['candidate_id'],
+    submittedAt: DateTime.parse(json['submitted_at']),
+  );
 }
 
 // ─── TALLY ────────────────────────────────────────────────────────────────────
@@ -217,7 +238,7 @@ class VoteModel {
 class TallyResult {
   final String positionId;
   final String positionTitle;
-  final List<CandidateTally> candidates; // sorted by vote count desc
+  final List<CandidateTally> candidates;
 
   const TallyResult({
     required this.positionId,
